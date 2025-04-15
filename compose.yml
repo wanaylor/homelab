@@ -15,9 +15,21 @@ services:
     secrets:
       - postgres_db_password
 
+  homeassistant:
+    container_name: homeassistant
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    volumes:
+      - homeassistant_configs:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - 8123:8123
+
 secrets:
   postgres_db_password:
     file: /run/secrets/postgres_db_password.txt
 
 volumes:
   postgres17_db:
+  homeassistant_configs:
