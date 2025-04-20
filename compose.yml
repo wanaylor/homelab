@@ -14,6 +14,8 @@ services:
       - postgres17_db:/var/lib/postgresql/data
     secrets:
       - postgres_db_password
+    networks:
+      homelab:
 
   homeassistant:
     container_name: homeassistant
@@ -25,11 +27,81 @@ services:
     privileged: true
     ports:
       - 8123:8123
+    networks:
+      homelab:
+
+  esphome:
+    container_name: esphome
+    image: ghcr.io/esphome/esphome
+    volumes:
+      - esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: always
+    privileged: true
+    ports:
+      - 6052:6052
+    network_mode: host
+
+  nginx:
+    container_name: nginx
+    restart: unless-stopped
+    image: nginx
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx/etc/nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      homelab:
+
+  nut-upsd:
+    image: instantlinux/nut-upsd
+    container_name: nut
+    environment:
+      - TZ=${TZ:-America/NewYork}
+      # Look up your UPS here https://networkupstools.org/stable-hcl.html to
+      # determine which driver to use.
+      - DRIVER=usbhid-ups
+      # If you want the ups to be named something other than 'ups', set the NAME env variable
+      # -NAME=cp800avr
+    devices:
+      # Device numbers are subject to change, so map in the whole bus. NUT
+      # will automatically find the UPS for you.
+      - /dev/bus/usb:/dev/bus/usb
+    ports:
+      - "3493:3493"
+    restart: unless-stopped
+    networks:
+      homelab:
+    secrets:
+      - nut-upsd-password
+
+  peanut:
+    image: brandawg93/peanut:latest
+    container_name: peanut
+    restart: unless-stopped
+    # Don't start peanut until after nut-upsd is running
+    depends_on:
+      - nut-upsd
+    ports:
+      - 8080:8080
+    environment:
+      - NUT_HOST=nut
+      - NUT_PORT=3493
+      - WEB_PORT=8080
+    networks:
+      homelab:
 
 secrets:
   postgres_db_password:
     file: /run/secrets/postgres_db_password.txt
+  nut-upsd-password:
+    file: /run/secrets/nut_upsd_password.txt
 
 volumes:
   postgres17_db:
   homeassistant_configs:
+  esphome:
+
+networks:
+  homelab:
