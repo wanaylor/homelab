@@ -27,8 +27,7 @@ services:
     privileged: true
     ports:
       - 8123:8123
-    networks:
-      homelab:
+    network_mode: host
 
   esphome:
     container_name: esphome
