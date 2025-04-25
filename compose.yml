@@ -99,16 +99,36 @@ services:
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
 
+  tailscale:
+    image: tailscale/tailscale:latest
+    environment:
+      - TS_EXTRA_ARGS=--auth-key file:/run/secrets/tailscale_auth_key --accept-routes
+      - TS_ROUTES=10.0.0.0/25
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    secrets:
+      - tailscale_auth_key
+    restart: unless-stopped
+
 secrets:
   postgres_db_password:
     file: /run/secrets/postgres_db_password.txt
   nut-upsd-password:
     file: /run/secrets/nut_upsd_password.txt
+  tailscale_auth_key:
+    file: /run/secrets/tailscale_auth_key.txt
 
 volumes:
   postgres17_db:
   homeassistant_configs:
   esphome:
+  tailscale:
 
 networks:
   homelab:
