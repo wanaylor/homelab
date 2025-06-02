@@ -1,0 +1,7 @@
+{
+  "storage-driver": "zfs",
+  "log-driver": "gelf",
+  "log-opts": {
+    "gelf-address": "udp://localhost:12201"
+  }
+}

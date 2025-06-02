@@ -8,6 +8,9 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_db_password
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
+    depends_on:
+      graylog:
+        condition: service_healthy
     ports:
       - 5432:5432
     volumes:
@@ -24,10 +27,17 @@ services:
       - homeassistant_configs:/config
       - /etc/localtime:/etc/localtime:ro
     restart: unless-stopped
+    depends_on:
+      graylog:
+        condition: service_healthy
     privileged: true
     ports:
       - 8123:8123
     network_mode: host
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
 
   esphome:
     container_name: esphome
@@ -35,11 +45,21 @@ services:
     volumes:
       - esphome:/config
       - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      graylog:
+        condition: service_healthy
     restart: always
     privileged: true
     ports:
       - 6052:6052
     network_mode: host
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+    # esphome logs the healthchecks which we don't want to see in Graylog
+    healthcheck:
+      disable: true
 
   nginx:
     container_name: nginx
@@ -50,6 +70,9 @@ services:
       - 443:443
     volumes:
       - ./nginx/etc/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      graylog:
+        condition: service_healthy
     networks:
       homelab:
 
@@ -69,6 +92,9 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     ports:
       - "3493:3493"
+    depends_on:
+      graylog:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       homelab:
@@ -93,11 +119,16 @@ services:
 
   grafana:
     image: grafana/grafana-oss:latest
+    restart: unless-stopped
     ports:
       - 3000:3000
     volumes:
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana:/var/lib/grafana
+    depends_on:
+      graylog:
+        condition: service_healthy
 
   tailscale:
     image: tailscale/tailscale:latest
@@ -115,20 +146,99 @@ services:
     secrets:
       - tailscale_auth_key
     restart: unless-stopped
+    depends_on:
+      graylog:
+        condition: service_healthy
+
+  mongodb:
+    image: "mongodb-raspberrypi4-unofficial-r7.0.8:latest"
+    volumes:
+      - "mongodb_data:/data/db"
+    restart: always
+
+  # For DataNode setup, graylog starts with a preflight UI, this is a change from just using OpenSearch/Elasticsearch.
+  # Please take a look at the README at the top of this repo or the regular docs for more info.
+  datanode:
+    image: "${DATANODE_IMAGE:-graylog/graylog-datanode:6.2.2}"
+    hostname: "datanode"
+    env_file: 
+      - path: "/secrets/graylog.env"
+        required: true
+    environment:
+      GRAYLOG_DATANODE_NODE_ID_FILE: "/var/lib/graylog-datanode/node-id"
+        #      GRAYLOG_DATANODE_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:?Please configure GRAYLOG_PASSWORD_SECRET in the .env file}"
+        #      GRAYLOG_DATANODE_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:?Please configure GRAYLOG_ROOT_PASSWORD_SHA2 in the .env file}"
+      GRAYLOG_DATANODE_MONGODB_URI: "mongodb://mongodb:27017/graylog"
+      # https://github.com/Graylog2/graylog2-server/issues/20027
+      GRAYLOG_DATANODE_INSECURE_STARTUP: true
+    ulimits:
+      memlock:
+        hard: -1
+        soft: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "8999:8999/tcp"   # DataNode API
+      - "9200:9200/tcp"
+      - "9300:9300/tcp"
+    volumes:
+      - "graylog-datanode:/var/lib/graylog-datanode"
+    restart: unless-stopped
+
+  graylog:
+    hostname: "server"
+    image: "${GRAYLOG_IMAGE:-graylog/graylog:6.2.2}"
+    depends_on:
+      mongodb:
+        condition: "service_started"
+    entrypoint: "/usr/bin/tini --  /docker-entrypoint.sh"
+    env_file: 
+      - path: "/secrets/graylog.env"
+        required: true
+    environment:
+      GRAYLOG_NODE_ID_FILE: "/usr/share/graylog/data/data/node-id"
+        #      GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:?Please configure GRAYLOG_PASSWORD_SECRET in the .env file}"
+        #      GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:?Please configure GRAYLOG_ROOT_PASSWORD_SHA2 in the .env file}"
+      GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
+      GRAYLOG_HTTP_EXTERNAL_URI: "http://localhost:9000/"
+      GRAYLOG_MONGODB_URI: "mongodb://mongodb:27017/graylog"
+    ports:
+    - "5044:5044/tcp"   # Beats
+    - "5140:5140/udp"   # Syslog
+    - "5140:5140/tcp"   # Syslog
+    - "5555:5555/tcp"   # RAW TCP
+    - "5555:5555/udp"   # RAW UDP
+    - "9000:9000/tcp"   # Server API
+    - "12201:12201/tcp" # GELF TCP
+    - "12201:12201/udp" # GELF UDP
+    #- "10000:10000/tcp" # Custom TCP port
+    #- "10000:10000/udp" # Custom UDP port
+    - "13301:13301/tcp" # Forwarder data
+    - "13302:13302/tcp" # Forwarder config
+    volumes:
+      - "graylog_data:/usr/share/graylog/data/data"
+      - "graylog_journal:/usr/share/graylog/data/journal"
+    restart: unless-stopped
 
 secrets:
   postgres_db_password:
-    file: /run/secrets/postgres_db_password.txt
+    file: /secrets/postgres_db_password.txt
   nut-upsd-password:
-    file: /run/secrets/nut_upsd_password.txt
+    file: /secrets/nut_upsd_password.txt
   tailscale_auth_key:
-    file: /run/secrets/tailscale_auth_key.txt
+    file: /secrets/tailscale_auth_key.txt
 
 volumes:
   postgres17_db:
   homeassistant_configs:
   esphome:
   tailscale:
+  mongodb_data:
+  graylog-datanode:
+  graylog_data:
+  graylog_journal:
+  grafana:
 
 networks:
   homelab:
