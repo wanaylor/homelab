@@ -20,3 +20,6 @@ See the example config file to see how to use the Postgred DB.
 
 ## Docker Settings
 I am using zfs with two NVME in a mirror so I've set my filesystem accordingly. Also, the default logging method is set to Graylog. For this reason I make Graylog start first in the compose file that way all the other containers can log their startup to it. If there is an issue with Graylog or logging then this can be reverted to json file for local debugging.
+
+## Secrets
+For each of the secrets, make a file in /secrets on the host filesystem and put the secret's value in plain text in the file. That secret file will be mounted in /run/secrets inside the container. Some images support (like Postgres) support this as a substitute for environment variables. Others (like Tailscale) do not. Check the image docs to verify.
