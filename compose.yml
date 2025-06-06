@@ -161,6 +161,7 @@ services:
   datanode:
     image: "${DATANODE_IMAGE:-graylog/graylog-datanode:6.2.2}"
     hostname: "datanode"
+    mem_limit: 2gb
     env_file: 
       - path: "/secrets/graylog.env"
         required: true
@@ -189,6 +190,7 @@ services:
   graylog:
     hostname: "server"
     image: "${GRAYLOG_IMAGE:-graylog/graylog:6.2.2}"
+    mem_limit: 1gb
     depends_on:
       mongodb:
         condition: "service_started"
