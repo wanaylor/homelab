@@ -160,8 +160,8 @@ services:
   # Please take a look at the README at the top of this repo or the regular docs for more info.
   datanode:
     image: "${DATANODE_IMAGE:-graylog/graylog-datanode:6.2.2}"
+    mem_limit: 3gb
     hostname: "datanode"
-    mem_limit: 2gb
     env_file: 
       - path: "/secrets/graylog.env"
         required: true
